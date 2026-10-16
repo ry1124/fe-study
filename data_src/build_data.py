@@ -361,6 +361,48 @@ def build_subject(bank_a, bank_b):
     return {"id": "fe", "name": "基本情報技術者", "intro": intro, "chapters": chapters}
 
 
+# ===== IPAの過去問（past_build.py が作る past.json ＋ 解説 past_exp.txt） =====
+PAST_SETS = {   # セットid -> (表示名, 本番形式の模試にするか)
+    "r05a": ("令和5年度 公開問題 科目A", False), "r06a": ("令和6年度 公開問題 科目A", False),
+    "r07a": ("令和7年度 公開問題 科目A", False), "r08a": ("令和8年度 公開問題 科目A", False),
+    "r05b": ("令和5年度 公開問題 科目B", False), "r06b": ("令和6年度 公開問題 科目B", False),
+    "r07b": ("令和7年度 公開問題 科目B", False), "r08b": ("令和8年度 公開問題 科目B", False),
+    "sma": ("サンプル問題セット 科目A（60問）", True), "smb": ("サンプル問題セット 科目B（20問）", True),
+    "smb0": ("サンプル問題 科目B（2022年公表）", False),
+}
+
+
+def build_past():
+    items = json.loads((HERE / "past.json").read_text(encoding="utf-8"))
+    exp, cur = {}, None
+    for line in (HERE / "past_exp.txt").read_text(encoding="utf-8").split("\n"):
+        if line.startswith("#") and not line.startswith("## "):
+            continue
+        m = re.match(r"^## (\S+) @(\d+)$", line)
+        if m:
+            cur = m.group(1)
+            exp[cur] = {"ch": int(m.group(2)), "text": ""}
+        elif cur and line.strip():
+            exp[cur]["text"] += line.strip()
+    ids = {x["id"] for x in items}
+    assert set(exp) == ids, f"解説がない過去問 {sorted(ids - set(exp))} / 過去問にない解説 {sorted(set(exp) - ids)}"
+    out = []
+    for x in items:
+        e = exp[x["id"]]
+        assert e["text"], f"{x['id']}: 解説が空"
+        assert x["set"] in PAST_SETS, f"{x['set']}: PAST_SETS にない"
+        if x["part"] == "b":
+            assert e["ch"] in (3, 12), f"{x['id']}: 科目Bの章は3か12"
+        for im in x["imgs"]:
+            assert (APP / im["src"]).exists(), f"{im['src']} がない"
+        out.append({"id": x["id"], "t": "past", "part": x["part"], "set": x["set"], "no": x["no"], "src": x["src"],
+                    "imgs": x["imgs"], "n": x["n"], "ans": x["ans"], "exp": e["text"],
+                    "ch": f"fe-{e['ch']:02d}", "kind": ("algo" if e["ch"] == 3 else "sec") if x["part"] == "b" else None})
+    sets = [{"id": k, "title": v[0], "mock": v[1], "part": next(x["part"] for x in out if x["set"] == k),
+             "ids": [x["id"] for x in out if x["set"] == k]} for k, v in PAST_SETS.items()]
+    return out, sets
+
+
 # ===== 計画 =====
 def build_plan(subject):
     days = json.loads(PLAN_JSON.read_text(encoding="utf-8"))
@@ -371,7 +413,7 @@ def build_plan(subject):
         assert set(p["b"]) <= all_b, f"{p['n']}日目: 存在しない科目Bの問題 {set(p['b']) - all_b}"
         for g in p["gate"] or []:
             if g["type"] == "rate":
-                g["ids"] = [i for n in g.pop("chs", []) for i in ids_of[n]] + g.pop("bids", [])
+                g["ids"] = [i for n in g.pop("chs", []) for i in ids_of[n]] + g.pop("bids", []) + g.pop("pids", [])
                 assert g["ids"], f"{g['id']}: 対象の問題がない"
     return days
 
@@ -387,13 +429,17 @@ for name, chs in (("tech", TECH), ("mgmt", MGMT), ("strat", STRAT)):
     assert have >= MOCK_A[name], f"模擬試験の{name}に{MOCK_A[name]}問必要だが{have}問しかない"
 for k, n in MOCK_B.items():
     assert len(bank_b[k]) >= n, f"模擬試験の科目B {k} に{n}問必要"
+past, past_sets = build_past()
 plan = build_plan(subject)
+for p_ in plan:
+    assert set(p_.get("past", [])) <= set(PAST_SETS), f"{p_['n']}日目: 存在しない過去問のセット"
 mock = {"a": {"tech": TECH, "mgmt": MGMT, "strat": STRAT, "n": MOCK_A, "min": 90},
         "b": {"n": MOCK_B, "min": 100}}
-data = {"subjects": [subject], "plan": plan, "mock": mock}
+data = {"subjects": [subject], "plan": plan, "mock": mock, "past": past, "pastSets": past_sets}
 (APP / "js" / "data.js").write_text(
     "// build_data.py が作るデータ(手で編集しない)\nconst FE_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n",
     encoding="utf-8")
 na = sum(len(v) for v in bank_a.values())
+print(f"過去問 {len(past)}問（科目A {sum(x['part'] == 'a' for x in past)}・科目B {sum(x['part'] == 'b' for x in past)}、全問に解説）")
 print(f"章 {len(subject['chapters'])} / 科目A {na}問（うち検算 {n_checked}問） / 科目B 本試験レベル：アルゴリズム {len(bank_b['algo'])}問・セキュリティ {len(bank_b['sec'])}問、"
       f"基礎：アルゴリズム {len(bank_b['algo0'])}問・セキュリティ {len(bank_b['sec0'])}問（アルゴリズムは全問を実行して検算） / 計画 {len(plan)}日")

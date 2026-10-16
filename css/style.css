@@ -317,3 +317,13 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 #view-settings { z-index: 20; background: var(--bg); padding-bottom: calc(32px + var(--safe-bottom)); }
 .settings-btn { font-size: 22px; padding: 4px 6px; line-height: 1; }
 .ver { font-size: 20px; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* ===== 過去問（IPAの原文の画像） ===== */
+.past-imgs { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; overflow-x: auto; cursor: zoom-in; -webkit-overflow-scrolling: touch; }
+.past-imgs.zoom { cursor: zoom-out; }
+.past-imgs.zoom img { width: 180%; max-width: none; }
+.past-imgs img { width: 100%; height: auto; display: block; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
+.past-src { margin: 4px 0 0; font-size: 12px; color: var(--text-dim); }
+.past-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.past-choices .choice { justify-content: center; padding: 12px 0; }
+.past-choices .choice .ck { width: auto; font-size: 18px; }

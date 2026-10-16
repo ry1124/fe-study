@@ -8,9 +8,14 @@ SUBJ.chapters.forEach((c) => {
   CHAPTERS[c.id] = c;
   c.quiz.forEach((q) => { QUESTIONS[q.id] = Object.assign({ ch: c.id }, q); });
 });
+// IPAの過去問(問題は原文の画像。出典つき)
+const PAST_SETS = {};         // セットid -> { title, part, mock, ids }
+D.past.forEach((q) => { QUESTIONS[q.id] = q; });
+D.pastSets.forEach((s) => { PAST_SETS[s.id] = s; });
+const PAST_IDS = D.past.map((q) => q.id);
 const A_IDS = Object.keys(QUESTIONS).filter((id) => QUESTIONS[id].t === 'a');
 const B_IDS = Object.keys(QUESTIONS).filter((id) => QUESTIONS[id].t === 'b');
-const KANA = ['ア', 'イ', 'ウ', 'エ', 'オ', 'カ', 'キ', 'ク'];
+const KANA = ['ア', 'イ', 'ウ', 'エ', 'オ', 'カ', 'キ', 'ク', 'ケ', 'コ'];
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -120,15 +125,16 @@ function prioritized(pool, size) {
 }
 
 // ===== 関門 =====
-function examResults(part) {
-  return state.exams.filter((r) => r.part === part);
+// 模擬試験の記録。set を渡すと過去問模試(そのセット)だけ、渡さなければアプリの模試だけ
+function examResults(part, set) {
+  return state.exams.filter((r) => r.part === part && (set ? r.set === set : !r.set));
 }
 
 // 関門の1項目の結果: { pass(null=未入力), text }
 function gateResult(item) {
   if (item.type === 'rate') { const v = rateOf(item.ids); return { pass: v >= item.target, text: `今 ${v}%` }; }
   if (item.type === 'mock') {
-    const rs = examResults(item.part);
+    const rs = examResults(item.part, item.set);
     if (!rs.length) return { pass: null, text: 'まだ受けていない' };
     const v = rs[rs.length - 1].score;
     return { pass: v >= item.target, text: `直近 ${v}点` };
@@ -253,6 +259,16 @@ function dayCard(day, label) {
     const ok = day.b.filter((id) => state.quiz[id] && state.quiz[id].last).length;
     links.push(`<button class="btn ghost" data-quiz-b="${day.n}">🧩 科目B 演習 ${esc(bRange(day.b))}（${ok}/${day.b.length}）</button>`);
   }
+  (day.past || []).forEach((id) => {
+    const ps = PAST_SETS[id];
+    if (ps.mock) {
+      const rs = examResults(ps.part, id);
+      links.push(`<button class="btn ghost" data-open-exam="past:${id}">📝 過去問模試 ${PART_LABEL[ps.part]}（${ps.ids.length}問・${D.mock[ps.part].min}分）${rs.length ? `　直近 ${rs[rs.length - 1].score}点` : ''}</button>`);
+    } else {
+      const ok = ps.ids.filter((x) => state.quiz[x] && state.quiz[x].last).length;
+      links.push(`<button class="btn ghost" data-quiz-past="${id}">📜 過去問 ${esc(ps.title)}（${ok}/${ps.ids.length}）</button>`);
+    }
+  });
   if (day.todo.includes('模擬試験')) {
     ['a', 'b'].forEach((p) => {
       const rs = examResults(p);
@@ -365,6 +381,21 @@ function renderQuizMenu() {
         <span class="row-sub">全${ids.length}問・正答率 ${rateOf(ids)}%${k.endsWith('0') ? '・1日目の練習用（模試には出ない）' : '・模試に出る'}</span></span></li>`;
     }).join('') + `</ul>`;
 
+  html += `<h2 class="section-title">過去問（IPA）<span class="section-sub">原文の画像・出典と解説つき</span></h2><ul class="list">` + D.pastSets.map((ps) => {
+    const ok = ps.ids.filter((id) => state.quiz[id] && state.quiz[id].last).length;
+    const tried = ps.ids.filter((id) => state.quiz[id]).length;
+    let row = `<li class="list-row" data-quiz-past="${ps.id}"><span class="row-no">${ps.part.toUpperCase()}</span>
+      <span class="row-main"><span class="row-title">${esc(ps.title)}</span>
+        <span class="row-sub">${ps.ids.length}問・1問ずつ解いて解説を読む</span></span>
+      <span class="score-chip ${!tried ? '' : ok === ps.ids.length ? 'good' : 'bad'}">${tried ? `${ok}/${ps.ids.length}` : '未'}</span></li>`;
+    if (ps.mock) {
+      row += `<li class="list-row" data-open-exam="past:${ps.id}"><span class="row-no">📝</span>
+        <span class="row-main"><span class="row-title">過去問模試 ${PART_LABEL[ps.part]}（本番と同じ ${D.mock[ps.part].min}分）</span>
+          <span class="row-sub">${esc(ps.title)}を時間を計って解く・6日目の関門</span></span>${examChip(ps.part, ps.id)}</li>`;
+    }
+    return row;
+  }).join('') + `</ul>`;
+
   html += `<h2 class="section-title">章ごと</h2><ul class="list">` + SUBJ.chapters.filter((c) => c.quiz.length).map((c) => {
     const st = chapterStats(c.id);
     const cls = st.tried === 0 ? '' : st.okNow === st.total ? 'good' : 'bad';
@@ -403,6 +434,11 @@ function startQuizMode(mode) {
 
 // 問題文(科目Bはリード文・プログラム・設問)
 function questionHtml(q, label) {
+  if (q.t === 'past') {
+    return `<div class="q-chapter">${esc(label)}</div>
+      <div class="past-imgs">${q.imgs.map((im) => `<img src="${im.src}" width="${im.w}" height="${im.h}" loading="lazy" alt="${esc(q.src)}">`).join('')}</div>
+      <p class="past-src">${esc(q.src)}（画像をタップすると拡大・縮小）</p>`;
+  }
   if (q.t === 'a') return `<div class="q-chapter">${esc(label)}</div><p class="q-text">${esc(q.q)}</p>`;
   return `<div class="q-chapter">${esc(label)}・${esc(q.title)}</div>
     <p class="q-text b">${esc(q.q)}</p>
@@ -411,6 +447,9 @@ function questionHtml(q, label) {
 }
 
 function choicesHtml(q, attr) {
+  if (q.t === 'past') {   // 選択肢の文は画像の中にあるので、記号だけのボタンにする
+    return `<div class="choices past-choices">${KANA.slice(0, q.n).map((k, i) => `<button class="choice" ${attr}="${i}" aria-label="${k}"><span class="ck">${k}</span></button>`).join('')}</div>`;
+  }
   return `<div class="choices">${q.opts.map((o, i) => `<button class="choice ${q.codeOpts ? 'code' : ''}" ${attr}="${i}">
       <span class="ck">${KANA[i]}</span><span class="ct">${esc(o)}</span></button>`).join('')}</div>`;
 }
@@ -420,7 +459,7 @@ function renderQuestion() {
   const q = QUESTIONS[id];
   $('quiz-progress').textContent = `${quiz.title}　${quiz.i + 1} / ${quiz.ids.length}`;
   quiz.answered = false;
-  const label = q.t === 'a' ? `${chapterTitle(q.ch)}・科目A` : `科目B ${q.kind.endsWith('0') ? '基礎' : '本試験レベル'} ${q.id}`;
+  const label = q.t === 'past' ? `過去問・${PART_LABEL[q.part]}` : q.t === 'a' ? `${chapterTitle(q.ch)}・科目A` : `科目B ${q.kind.endsWith('0') ? '基礎' : '本試験レベル'} ${q.id}`;
   $('quiz-body').innerHTML = questionHtml(q, label) + choicesHtml(q, 'data-answer') + `<div id="q-result"></div>`;
 }
 
@@ -462,6 +501,7 @@ function submitAnswer(choice) {
 }
 
 function shortQ(q) {
+  if (q.t === 'past') return q.src.replace('出典：', '');
   return q.t === 'a' ? q.q.split('\n')[0] : `${q.id} ${q.title}`;
 }
 
@@ -522,15 +562,22 @@ function pickExam(part) {
   return [...shuffle(pickFrom(of('algo'), m.n.algo)), ...shuffle(pickFrom(of('sec'), m.n.sec))];
 }
 
-function examChip(part) {
-  const rs = examResults(part);
+function examChip(part, set) {
+  const rs = examResults(part, set);
   if (!rs.length) return '<span class="score-chip">未</span>';
   const last = rs[rs.length - 1].score;
   return `<span class="score-chip ${last >= 600 ? 'good' : 'bad'}">${last}点</span>`;
 }
 
-function startExam(part) {
-  exam = { part, ids: pickExam(part), picked: {}, startAt: Date.now(), done: false, i: 0 };
+// key は 'a'・'b'（アプリの模試）か 'past:セットid'（過去問模試）
+function examTitle() {
+  return exam.set ? `過去問模試 ${PART_LABEL[exam.part]}` : `模擬試験 ${PART_LABEL[exam.part]}`;
+}
+
+function startExam(key) {
+  const set = key.startsWith('past:') ? key.slice(5) : null;
+  const part = set ? PAST_SETS[set].part : key;
+  exam = { key, part, set, ids: set ? PAST_SETS[set].ids.slice() : pickExam(part), picked: {}, startAt: Date.now(), done: false, i: 0 };
   if (!$('view-exam').classList.contains('active')) backTo.exam = currentTab;
   renderExam();
   $('btn-end-exam').classList.remove('hidden');
@@ -539,7 +586,7 @@ function startExam(part) {
   startTimer(Object.assign(() => {
     const left = ms - (Date.now() - exam.startAt);
     if (left <= 0 && !exam.done) { showToast('時間になりました。採点します'); setTimeout(gradeExam, 0); }
-    return `模擬試験 ${PART_LABEL[exam.part]}　残り ${mmss(Math.max(0, left))}`;
+    return `${examTitle()}　残り ${mmss(Math.max(0, left))}`;
   }, { el: 'exam-timer' }));
 }
 
@@ -547,7 +594,7 @@ function renderExam() {
   const nav = `<div class="exam-nav">${exam.ids.map((id, i) => `<button class="exam-num ${i === exam.i ? 'on' : ''}" data-exam-q="${i}">${i + 1}</button>`).join('')}</div>`;
   const qs = exam.ids.map((id, i) => {
     const q = QUESTIONS[id];
-    const label = q.t === 'a' ? `問${i + 1}` : `問${i + 1}（${q.kind === 'algo' ? 'アルゴリズム' : 'セキュリティ'}）`;
+    const label = q.t === 'a' || q.t === 'past' ? `問${i + 1}` : `問${i + 1}（${q.kind === 'algo' ? 'アルゴリズム' : 'セキュリティ'}）`;
     return `<div class="exam-q ${i === exam.i ? '' : 'hidden'}" data-i="${i}">
       ${questionHtml(q, label)}${choicesHtml(q, 'data-exam-pick')}<div class="exam-q-ans"></div>
       <div class="pager"><button class="btn ghost small" data-exam-q="${i - 1}" ${i === 0 ? 'disabled' : ''}>‹ 前の問題</button>
@@ -588,7 +635,7 @@ function gradeExam() {
     const right = p === q.ans;
     if (right) ok += 1;
     if (p !== undefined) recordAnswer(id, right);
-    const area = q.t === 'b' ? (q.kind === 'algo' ? 'アルゴリズム' : 'セキュリティ') : areaOf(q);
+    const area = q.t === 'b' || (q.t === 'past' && q.part === 'b') ? (q.kind === 'algo' ? 'アルゴリズム' : 'セキュリティ') : areaOf(q);
     byArea[area] = byArea[area] || [0, 0];
     byArea[area][0] += right ? 1 : 0;
     byArea[area][1] += 1;
@@ -600,10 +647,10 @@ function gradeExam() {
   });
   const n = exam.ids.length;
   const score = Math.round(ok / n * 1000);
-  state.exams.push({ at: new Date().toISOString(), part: exam.part, score, ok, n, sec });
+  state.exams.push(Object.assign({ at: new Date().toISOString(), part: exam.part, score, ok, n, sec }, exam.set ? { set: exam.set } : {}));
   saveState();
   if ($('btn-end-exam2')) $('btn-end-exam2').remove();
-  $('exam-timer').textContent = `模擬試験 ${PART_LABEL[exam.part]}　採点済み`;
+  $('exam-timer').textContent = `${examTitle()}　採点済み`;
   $('btn-end-exam').classList.add('hidden');
   $('exam-result').innerHTML = `<div class="finish">
       <div class="finish-score"><b>${score}</b> / 1000点</div>
@@ -613,8 +660,8 @@ function gradeExam() {
     <div class="table-wrap"><table class="tb"><thead><tr><th>分野</th><th>正解</th><th>正答率</th></tr></thead><tbody>
       ${Object.entries(byArea).map(([a, [x, y]]) => `<tr><td>${esc(a)}</td><td class="num">${x} / ${y}</td><td class="num">${Math.round(x / y * 100)}%</td></tr>`).join('')}
     </tbody></table></div>
-    <p class="muted">本番はIRT方式なので点数はこのとおりにはなりません。また、この模試は練習した問題から出るので本番より高く出ます。下の番号を押すと、答えと解説を確認できます。間違えた問題は「間違えた問題」に入りました。</p>
-    <div class="q-actions"><button class="btn ghost" data-open-exam="${exam.part}">もう一度解く</button>
+    <p class="muted">本番はIRT方式なので点数はこのとおりにはなりません。${exam.set ? 'IPAの過去問なので、初めて解いたときの点数は本番の実力に近い目安になります（2回目以降は高く出ます）。' : 'また、この模試は練習した問題から出るので本番より高く出ます。'}下の番号を押すと、答えと解説を確認できます。間違えた問題は「間違えた問題」に入りました。</p>
+    <div class="q-actions"><button class="btn ghost" data-open-exam="${exam.key}">もう一度解く</button>
       <button class="btn primary" id="btn-finish-exam">終わる</button></div>`;
   $('view-exam').scrollTop = 0;
 }
@@ -687,7 +734,7 @@ function renderRecord() {
   html += `<h2 class="section-title">本番形式の模擬試験（1000点換算）</h2>`;
   html += state.exams.length ? `<ul class="list">` + state.exams.slice(-10).reverse().map((r) => {
     const d = new Date(r.at);
-    return `<li class="list-row static"><span class="row-main"><span class="row-title">${PART_LABEL[r.part]}・${fmtDay(ymd(d))} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}</span>
+    return `<li class="list-row static"><span class="row-main"><span class="row-title">${r.set ? '過去問模試 ' + PART_LABEL[r.part] : '模擬試験 ' + PART_LABEL[r.part]}・${fmtDay(ymd(d))} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}</span>
       <span class="row-sub">${r.ok} / ${r.n} 問正解・${mmss(r.sec * 1000)}</span></span>
       <span class="score-chip ${r.score >= 600 ? 'good' : 'bad'}">${r.score}点</span></li>`;
   }).join('') + `</ul>` : `<div class="card soft"><p class="muted">「問題」タブの「本番形式の模擬試験」を解くと、ここに並びます。6日目の関門にも自動で記録されます。</p></div>`;
@@ -745,7 +792,9 @@ function inPlanDetail() {
 }
 
 document.addEventListener('click', (e) => {
-  const el = e.target.closest('button, [data-open-ch], [data-quiz-ch], [data-quiz-kind], [data-plan-detail], [data-open-intro], [data-open-exam]');
+  const zoom = e.target.closest('.past-imgs');   // 過去問の画像はタップで拡大・縮小
+  if (zoom) { zoom.classList.toggle('zoom'); return; }
+  const el = e.target.closest('button, [data-open-ch], [data-quiz-ch], [data-quiz-kind], [data-quiz-past], [data-plan-detail], [data-open-intro], [data-open-exam]');
   if (!el || el.disabled) return;
   const ds = el.dataset;
   if (el.classList.contains('tab-btn')) return switchTab(ds.tab);
@@ -775,6 +824,7 @@ document.addEventListener('click', (e) => {
   if (ds.quizCh) return startQuiz(CHAPTERS[ds.quizCh].quiz.map((q) => q.id), `第${CHAPTERS[ds.quizCh].no}章`);
   if (ds.quizB) return startQuiz(PLAN[Number(ds.quizB) - 1].b.slice(), `科目B ${ds.quizB}日目の演習`);
   if (ds.quizKind) return startQuiz(B_IDS.filter((id) => QUESTIONS[id].kind === ds.quizKind), '科目B ' + B_KIND_LABEL[ds.quizKind]);
+  if (ds.quizPast) return startQuiz(PAST_SETS[ds.quizPast].ids.slice(), '過去問 ' + PAST_SETS[ds.quizPast].title);
   if (ds.quizMode) return startQuizMode(ds.quizMode);
   if (ds.openExam) {
     if (exam && !exam.done && $('view-exam').classList.contains('active')) return;
