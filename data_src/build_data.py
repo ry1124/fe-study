@@ -169,6 +169,35 @@ def build_b():
     return out
 
 
+# ===== 正解の位置をそろえる =====
+# 問題ファイルは正解がア・イに偏っている（エはほとんど正解にならない）。本番は位置がほぼ均等なので、
+# 選択肢を回転させて、正解の位置がア〜エに均等に散らばるようにする。数値だけの選択肢は小さい順のまま動かさない。
+# 解説の中の選択肢の記号（「アは〜」「イとエは〜」）も、新しい並びに合わせて書き換える。
+LABEL = re.compile(r"(?<![ァ-ヶー])[アイウエオカキク](?![ァ-ヶー])")
+
+
+def is_numeric(opts):
+    return all(re.fullmatch(r"[−-]?[\d,]+(\.\d+)?", o.strip()) for o in opts)
+
+
+def rebalance(items):
+    count = [0] * 8
+    fixed = [q for q in items if is_numeric(q["opts"])]
+    for q in fixed:
+        count[q["ans"]] += 1
+    for q in items:
+        if q in fixed:
+            continue
+        n = len(q["opts"])
+        target = min(range(n), key=lambda i: (count[i], i))
+        shift = (target - q["ans"]) % n
+        q["opts"] = [q["opts"][(i - shift) % n] for i in range(n)]
+        q["ans"] = target
+        q["exp"] = LABEL.sub(lambda m: KANA[(KANA.index(m.group()) + shift) % n] if KANA.index(m.group()) < n else m.group(), q["exp"])
+        count[target] += 1
+    return count
+
+
 def build_subject(bank_a, bank_b):
     md = (HERE / "fe.md").read_text(encoding="utf-8")
     sections = re.split(r"^## ", md, flags=re.M)[1:]
@@ -203,6 +232,8 @@ def build_plan(subject):
 
 bank_a, n_checked = parse_a()
 bank_b = build_b()
+print("正解の位置（ア〜エ）: 科目A", rebalance([q for v in bank_a.values() for q in v])[:4],
+      "/ 科目B", rebalance(bank_b["algo"] + bank_b["sec"])[:4])
 subject = build_subject(bank_a, bank_b)
 assert set(bank_a) <= {c["no"] for c in subject["chapters"]}, "kamoku_a.txt に存在しない章がある"
 for name, chs in (("tech", TECH), ("mgmt", MGMT), ("strat", STRAT)):
