@@ -16,6 +16,8 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const PART_LABEL = { a: '科目A', b: '科目B' };
+// 科目Bの問題の種類。algo・sec が本試験レベル(模試に出す)、algo0・sec0 が基礎
+const B_KIND_LABEL = { algo: 'アルゴリズム（本試験レベル）', sec: '情報セキュリティ（本試験レベル）', algo0: 'アルゴリズム（基礎）', sec0: '情報セキュリティ（基礎）' };
 
 // ===== 日付 =====
 function ymd(n) {
@@ -337,11 +339,9 @@ function renderQuizMenu() {
   const wrong = wrongIds();
   const all = Object.keys(QUESTIONS);
   const unanswered = all.filter((id) => !state.quiz[id]).length;
-  const algo = B_IDS.filter((id) => QUESTIONS[id].kind === 'algo');
-  const sec = B_IDS.filter((id) => QUESTIONS[id].kind === 'sec');
   let html = `<div class="quick">
     <button class="quick-btn" data-quiz-mode="drill"><b>科目Aドリル</b><span>読んだ章から${DRILL_SIZE}問</span></button>
-    <button class="quick-btn" data-quiz-mode="bmix"><b>科目Bトレース</b><span>アルゴリズムを5問（間違えた問題を優先）</span></button>
+    <button class="quick-btn" data-quiz-mode="bmix"><b>科目Bトレース</b><span>本試験レベルのアルゴリズムを5問（間違えた問題を優先）</span></button>
     <button class="quick-btn" data-quiz-mode="wrong" ${wrong.length ? '' : 'disabled'}><b>間違えた問題</b><span>${wrong.length}問（3回続けて正解で外れる）</span></button>
     <button class="quick-btn" data-quiz-mode="new" ${unanswered ? '' : 'disabled'}><b>まだ解いていない問題</b><span>${unanswered}問</span></button>
   </div>
@@ -358,11 +358,12 @@ function renderQuizMenu() {
       ${examChip(p)}</li>`;
   }).join('') + `</ul>`;
 
-  html += `<h2 class="section-title">科目B<span class="section-sub">1問5〜10分・トレース表を書いて解く</span></h2><ul class="list">
-    <li class="list-row" data-quiz-kind="algo"><span class="row-no">🧩</span><span class="row-main"><span class="row-title">アルゴリズム（擬似言語）</span>
-      <span class="row-sub">全${algo.length}問・正答率 ${rateOf(algo)}%</span></span></li>
-    <li class="list-row" data-quiz-kind="sec"><span class="row-no">🔒</span><span class="row-main"><span class="row-title">情報セキュリティ</span>
-      <span class="row-sub">全${sec.length}問・正答率 ${rateOf(sec)}%</span></span></li></ul>`;
+  html += `<h2 class="section-title">科目B<span class="section-sub">1問5〜10分・トレース表を書いて解く</span></h2><ul class="list">` +
+    Object.entries(B_KIND_LABEL).map(([k, label]) => {
+      const ids = B_IDS.filter((id) => QUESTIONS[id].kind === k);
+      return `<li class="list-row" data-quiz-kind="${k}"><span class="row-no">${k.startsWith('algo') ? '🧩' : '🔒'}</span><span class="row-main"><span class="row-title">${label}</span>
+        <span class="row-sub">全${ids.length}問・正答率 ${rateOf(ids)}%${k.endsWith('0') ? '・1日目の練習用（模試には出ない）' : '・模試に出る'}</span></span></li>`;
+    }).join('') + `</ul>`;
 
   html += `<h2 class="section-title">章ごと</h2><ul class="list">` + SUBJ.chapters.filter((c) => c.quiz.length).map((c) => {
     const st = chapterStats(c.id);
@@ -419,7 +420,7 @@ function renderQuestion() {
   const q = QUESTIONS[id];
   $('quiz-progress').textContent = `${quiz.title}　${quiz.i + 1} / ${quiz.ids.length}`;
   quiz.answered = false;
-  const label = q.t === 'a' ? `${chapterTitle(q.ch)}・科目A` : `科目B ${q.id}`;
+  const label = q.t === 'a' ? `${chapterTitle(q.ch)}・科目A` : `科目B ${q.kind.endsWith('0') ? '基礎' : '本試験レベル'} ${q.id}`;
   $('quiz-body').innerHTML = questionHtml(q, label) + choicesHtml(q, 'data-answer') + `<div id="q-result"></div>`;
 }
 
@@ -773,7 +774,7 @@ document.addEventListener('click', (e) => {
   if (ds.openCh) return openChapter(ds.openCh);
   if (ds.quizCh) return startQuiz(CHAPTERS[ds.quizCh].quiz.map((q) => q.id), `第${CHAPTERS[ds.quizCh].no}章`);
   if (ds.quizB) return startQuiz(PLAN[Number(ds.quizB) - 1].b.slice(), `科目B ${ds.quizB}日目の演習`);
-  if (ds.quizKind) return startQuiz(B_IDS.filter((id) => QUESTIONS[id].kind === ds.quizKind), ds.quizKind === 'algo' ? '科目B アルゴリズム' : '科目B セキュリティ');
+  if (ds.quizKind) return startQuiz(B_IDS.filter((id) => QUESTIONS[id].kind === ds.quizKind), '科目B ' + B_KIND_LABEL[ds.quizKind]);
   if (ds.quizMode) return startQuizMode(ds.quizMode);
   if (ds.openExam) {
     if (exam && !exam.done && $('view-exam').classList.contains('active')) return;

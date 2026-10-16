@@ -1,22 +1,27 @@
 # -*- coding: utf-8 -*-
-"""テキスト(fe.md)・科目Aの問題(kamoku_a.txt)・科目Bの問題(kamoku_b.py)・計画(plan.json)から js/data.js を作る。
+"""テキスト(fe.md)・科目Aの問題(kamoku_a.txt)・科目Bの問題(基礎 kamoku_b.py / 本試験レベル kamoku_b_exam.py)・計画(plan.json)から js/data.js を作る。
 問題やテキストを直したらこのスクリプトを実行し、js/version.js を上げて公開する。
 検算: 科目Aの V: 行を計算して正解の選択肢と照合し、科目Bは check 関数でプログラムを実際に動かして正解を確かめる。"""
 import html
 import ipaddress  # noqa: F401  V: 式の中で使う
 import json
 import math  # noqa: F401  V: 式の中で使う
+import posixpath  # noqa: F401  V: 式の中で使う
 import re
 import sqlite3
+import statistics  # noqa: F401  V: 式の中で使う
+from fractions import Fraction  # noqa: F401  V: 式の中で使う
 from pathlib import Path
 
-from kamoku_b import ALGO, SEC
+import kamoku_b
+import kamoku_b_exam
 
 HERE = Path(__file__).parent
 APP = HERE.parent
 PLAN_JSON = HERE / "plan.json"   # make_plan.py が作る
 KANA = "アイウエオカキク"
-B_CH = {"algo": 3, "sec": 12}     # 科目Bの問題を置く章
+# 科目Bの問題の種類と、置く章。algo/sec が本試験レベル（模試に出す）、algo0/sec0 が基礎
+B_KINDS = [("algo0", kamoku_b.ALGO, 3), ("sec0", kamoku_b.SEC, 12), ("algo", kamoku_b_exam.ALGO, 3), ("sec", kamoku_b_exam.SEC, 12)]
 TECH, MGMT, STRAT = [1, 2, 4, 5, 6, 7, 8, 9], [10], [11]
 MOCK_A = {"tech": 41, "mgmt": 7, "strat": 12}   # 本番の科目Aの分野別の出題数
 MOCK_B = {"algo": 16, "sec": 4}
@@ -108,6 +113,145 @@ def sql(setup, query):
     return "と".join(str(r[0]) for r in rows)
 
 
+def fifo(refs, frames):
+    """FIFOのページフォールト回数"""
+    mem, faults = [], 0
+    for p in refs:
+        if p not in mem:
+            faults += 1
+            if len(mem) == frames:
+                mem.pop(0)
+            mem.append(p)
+    return faults
+
+
+def sql_rows(setup, query):
+    con = sqlite3.connect(":memory:")
+    con.executescript(setup)
+    rows = [r[0] for r in con.execute(query).fetchall()]
+    con.close()
+    return rows
+
+
+EMP = ("CREATE TABLE 社員(社員番号, 部署, 給与); INSERT INTO 社員 VALUES "
+       "(1,'営業',30),(2,'営業',26),(3,'開発',40),(4,'開発',36),(5,'開発',20),(6,'総務',28);")
+CUST = ("CREATE TABLE 顧客(顧客番号, 氏名); CREATE TABLE 注文(注文番号, 顧客番号); "
+        "INSERT INTO 顧客 VALUES (1,'a'),(2,'b'),(3,'c'),(4,'d'); INSERT INTO 注文 VALUES (10,1),(11,1),(12,3);")
+
+
+def dfa(table, start, accept, s):
+    """table: 状態 -> (0のときの遷移先, 1のときの遷移先)"""
+    st = start
+    for ch in s:
+        st = table[st][int(ch)]
+    return st in accept
+
+
+def rec(f, n):
+    def g(k):
+        return f(g, k)
+    return g(n)
+
+
+def qs_demo():
+    """科目A 第2章のキューとスタックの問題を実際に動かす"""
+    q, s, out = [1, 2, 3, 4], [], []
+    s.append(q.pop(0)); s.append(q.pop(0))
+    q.append(5)
+    s.append(q.pop(0))
+    while s:
+        out.append(s.pop())
+    return out
+
+
+def bst_path(keys, x):
+    root = None
+    for k in keys:
+        if root is None:
+            root = [k, None, None]
+            continue
+        n = root
+        while True:
+            i = 1 if k < n[0] else 2
+            if n[i] is None:
+                n[i] = [k, None, None]
+                break
+            n = n[i]
+    path, n = [], root
+    while n is not None:
+        path.append(n[0])
+        if x == n[0]:
+            break
+        n = n[1] if x < n[0] else n[2]
+    return path
+
+
+def heap_push(h, x):
+    h = [None] + list(h) + [x]
+    k = len(h) - 1
+    while k > 1 and h[k // 2] < h[k]:
+        h[k // 2], h[k] = h[k], h[k // 2]
+        k //= 2
+    return h[1:]
+
+
+def probe(keys, size):
+    table, pos = [None] * size, {}
+    for k in keys:
+        h = k % size
+        while table[h] is not None:
+            h = (h + 1) % size
+        table[h] = k
+        pos[k] = h
+    return pos
+
+
+def insertion_compares(a):
+    a, c = list(a), 0
+    for i in range(1, len(a)):
+        x, j = a[i], i - 1
+        while j >= 0:
+            c += 1
+            if a[j] > x:
+                a[j + 1] = a[j]
+                j -= 1
+            else:
+                break
+        a[j + 1] = x
+    return c
+
+
+def bubble_pass(a):
+    a = list(a)
+    for j in range(len(a) - 1):
+        if a[j] > a[j + 1]:
+            a[j], a[j + 1] = a[j + 1], a[j]
+    return a
+
+
+def rpn(expr):
+    st = []
+    for t in expr.split():
+        if t in "＋−×÷":
+            b, a = st.pop(), st.pop()
+            st.append({"＋": a + b, "−": a - b, "×": a * b, "÷": a // b}[t])
+        else:
+            st.append(int(t))
+    return st[0]
+
+
+def cpm(tasks):
+    """tasks: 作業名 -> (日数, [先行作業]) のクリティカルパスの日数"""
+    end = {}
+
+    def f(t):
+        if t not in end:
+            d, pre = tasks[t]
+            end[t] = d + max((f(p) for p in pre), default=0)
+        return end[t]
+    return max(f(t) for t in tasks)
+
+
 def numbers(text):
     return [float(x.replace(",", "")) for x in re.findall(r"-?\d[\d,]*(?:\.\d+)?", text.replace("−", "-"))]
 
@@ -144,7 +288,7 @@ def parse_a():
             elif k == "E": q["exp"] = v
             elif k == "V": q["v"] = v
             else: raise ValueError(f"知らない行: {l}")
-        qid = f"a{ch:02d}-{len(bank.get(ch, [])) + 1:02d}"
+        qid = f"p{ch:02d}-{len(bank.get(ch, [])) + 1:02d}"
         assert all(q["opts"]) and "ans" in q and q.get("exp"), f"{qid}: 選択肢・正解・解説のどれかがない「{q.get('q', '')[:20]}」"
         assert len(set(q["opts"])) == 4, f"{qid}: 同じ選択肢がある"
         if "v" in q:
@@ -155,14 +299,16 @@ def parse_a():
 
 
 def build_b():
-    out = {"algo": [], "sec": []}
-    for kind, src in (("algo", ALGO), ("sec", SEC)):
+    out, seen = {k: [] for k, _, _ in B_KINDS}, set()
+    for kind, src, _ in B_KINDS:
         for p in src:
+            assert p["id"] not in seen, f"{p['id']}: 問題の id が重複している"
+            seen.add(p["id"])
             assert 0 <= p["ans"] < len(p["opts"]) and len(set(p["opts"])) == len(p["opts"]), f"{p['id']}: 選択肢か正解の番号がおかしい"
             if p["check"]:
                 got = p["check"]()
                 assert got == p["ans"], f"{p['id']}: プログラムを動かした正解は「{p['opts'][got]}」なのに、ans は「{p['opts'][p['ans']]}」"
-            elif kind == "algo":
+            elif kind.startswith("algo"):
                 raise AssertionError(f"{p['id']}: アルゴリズムの問題に check がない")
             out[kind].append({"id": p["id"], "t": "b", "kind": kind, "title": p["title"], "q": p["lead"], "code": p["code"],
                               "ask": p["ask"], "opts": p["opts"], "ans": p["ans"], "exp": p["exp"], "codeOpts": p["codeOpts"]})
@@ -209,7 +355,7 @@ def build_subject(bank_a, bank_b):
             intro = md_to_html(body)
             continue
         no = int(m.group(1))
-        quiz = bank_a.get(no, []) + [q for k, c in B_CH.items() if c == no for q in bank_b[k]]
+        quiz = bank_a.get(no, []) + [q for k, _, c in B_KINDS if c == no for q in bank_b[k]]
         lead = body.strip().split("\n", 1)[0]
         chapters.append({"id": f"fe-{no:02d}", "no": no, "title": m.group(2), "lead": lead, "html": md_to_html(body), "quiz": quiz})
     return {"id": "fe", "name": "基本情報技術者", "intro": intro, "chapters": chapters}
@@ -233,7 +379,7 @@ def build_plan(subject):
 bank_a, n_checked = parse_a()
 bank_b = build_b()
 print("正解の位置（ア〜エ）: 科目A", rebalance([q for v in bank_a.values() for q in v])[:4],
-      "/ 科目B", rebalance(bank_b["algo"] + bank_b["sec"])[:4])
+      "/ 科目B（本試験レベル）", rebalance(bank_b["algo"] + bank_b["sec"])[:4])
 subject = build_subject(bank_a, bank_b)
 assert set(bank_a) <= {c["no"] for c in subject["chapters"]}, "kamoku_a.txt に存在しない章がある"
 for name, chs in (("tech", TECH), ("mgmt", MGMT), ("strat", STRAT)):
@@ -249,4 +395,5 @@ data = {"subjects": [subject], "plan": plan, "mock": mock}
     "// build_data.py が作るデータ(手で編集しない)\nconst FE_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n",
     encoding="utf-8")
 na = sum(len(v) for v in bank_a.values())
-print(f"章 {len(subject['chapters'])} / 科目A {na}問（うち検算 {n_checked}問） / 科目B アルゴリズム {len(bank_b['algo'])}問（全問を実行して検算）・セキュリティ {len(bank_b['sec'])}問 / 計画 {len(plan)}日")
+print(f"章 {len(subject['chapters'])} / 科目A {na}問（うち検算 {n_checked}問） / 科目B 本試験レベル：アルゴリズム {len(bank_b['algo'])}問・セキュリティ {len(bank_b['sec'])}問、"
+      f"基礎：アルゴリズム {len(bank_b['algo0'])}問・セキュリティ {len(bank_b['sec0'])}問（アルゴリズムは全問を実行して検算） / 計画 {len(plan)}日")

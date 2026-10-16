@@ -645,7 +645,7 @@ Q: 表「社員（社員番号, 部署, 給与）」に次の6行がある。\n(
 エ: 3
 A: ウ
 E: WHERE で給与25以上に絞ると、営業2人、開発2人（20の人が除かれる）、総務1人。HAVING で2人以上の部署に絞ると 営業・開発 の2行。
-V: sql(EMP, "SELECT 部署, COUNT(*) FROM 社員 WHERE 給与 >= 25 GROUP BY 部署 HAVING COUNT(*) >= 2")
+V: sql(EMP, "SELECT COUNT(*) FROM (SELECT 部署, COUNT(*) FROM 社員 WHERE 給与 >= 25 GROUP BY 部署 HAVING COUNT(*) >= 2)")
 
 Q: 表「社員（社員番号, 部署, 給与）」に次の6行がある。\n(1, 営業, 30)、(2, 営業, 26)、(3, 開発, 40)、(4, 開発, 36)、(5, 開発, 20)、(6, 総務, 28)\n次のSQL文で得られる社員番号を全て挙げたものはどれか。\nSELECT 社員番号 FROM 社員 X WHERE 給与 > (SELECT AVG(給与) FROM 社員 Y WHERE Y.部署 = X.部署)
 ア: 1
