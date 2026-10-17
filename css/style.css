@@ -332,3 +332,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 .exp { white-space: pre-wrap; font-size: 15px; line-height: 1.75; margin-top: 8px; color: var(--text); }
 .exp-h { display: inline-block; margin-top: 6px; color: var(--accent); }
 .result.ng .exp-h { color: #b4232a; }
+
+/* ===== テキスト: 小見出しと囲み（覚え方・試験ではこう出る など） ===== */
+.reader h4 { font-size: 16px; margin: 18px 0 6px; color: var(--accent); }
+.reader .box { background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: 15px; line-height: 1.7; }

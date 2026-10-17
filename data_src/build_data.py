@@ -52,6 +52,15 @@ def md_to_html(md):
         elif ln.startswith("### "):
             out.append(f"<h3>{inline(ln[4:])}</h3>")
             i += 1
+        elif ln.startswith("#### "):
+            out.append(f"<h4>{inline(ln[5:])}</h4>")
+            i += 1
+        elif ln.startswith(">"):   # 囲み（覚え方・試験ではこう出る など）。続く「>」の行を1つの箱にする
+            box = []
+            while i < len(lines) and lines[i].startswith(">"):
+                box.append(inline(lines[i][1:].strip()))
+                i += 1
+            out.append("<div class='box'>" + "<br>".join(box) + "</div>")
         elif ln.startswith("|"):
             rows = []
             while i < len(lines) and lines[i].startswith("|"):
@@ -376,7 +385,8 @@ def rebalance(items):
 
 
 def build_subject(bank_a, bank_b):
-    md = (HERE / "fe.md").read_text(encoding="utf-8")
+    # テキストは data_src/text/*.md（ファイル名の順につなげる。00_intro.md、01.md …）
+    md = "\n".join(f.read_text(encoding="utf-8") for f in sorted((HERE / "text").glob("*.md")))
     sections = re.split(r"^## ", md, flags=re.M)[1:]
     intro, chapters = "", []
     for sec in sections:
