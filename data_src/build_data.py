@@ -87,6 +87,37 @@ def md_to_html(md):
     return "\n".join(out)
 
 
+# ===== 解説（初心者向け。data_src/exp/*.txt に問題id ごとに書く） =====
+def load_exp():
+    """「## 問題id」または「## 問題id @章番号」の次の行から、次の「## 」までを1つの解説にする。改行はそのまま残す"""
+    out = {}
+    for f in sorted((HERE / "exp").glob("*.txt")):
+        cur = None
+        for line in f.read_text(encoding="utf-8").split("\n"):
+            if line.startswith("#") and not line.startswith("## "):
+                continue
+            m = re.match(r"^## (\S+)(?: @(\d+))?\s*$", line)
+            if m:
+                cur = m.group(1)
+                assert cur not in out, f"{f.name}: 解説 {cur} が重複している"
+                out[cur] = {"ch": int(m.group(2)) if m.group(2) else None, "lines": []}
+            elif cur:
+                out[cur]["lines"].append(line.rstrip())
+    for k, v in out.items():
+        v["text"] = "\n".join(v.pop("lines")).strip()
+        assert v["text"], f"解説 {k} が空"
+    return out
+
+
+EXP = load_exp()
+
+
+def exp_of(qid):
+    """科目A・科目B（オリジナル）の解説。exp/ にない問題があればビルドを止める"""
+    assert qid in EXP and EXP[qid]["ch"] is None, f"{qid}: data_src/exp/ に解説がない"
+    return EXP[qid]["text"]
+
+
 # ===== 科目Aの検算に使う関数 =====
 def lru(refs, frames):
     """LRUのページフォールト回数"""
@@ -294,7 +325,7 @@ def parse_a():
         if "v" in q:
             verify(qid, q.pop("v"), q["opts"], q["ans"])
             n_checked += 1
-        bank.setdefault(ch, []).append({"id": qid, "t": "a", "q": q["q"], "opts": q["opts"], "ans": q["ans"], "exp": q["exp"]})
+        bank.setdefault(ch, []).append({"id": qid, "t": "a", "q": q["q"], "opts": q["opts"], "ans": q["ans"], "exp": exp_of(qid)})
     return bank, n_checked
 
 
@@ -311,7 +342,7 @@ def build_b():
             elif kind.startswith("algo"):
                 raise AssertionError(f"{p['id']}: アルゴリズムの問題に check がない")
             out[kind].append({"id": p["id"], "t": "b", "kind": kind, "title": p["title"], "q": p["lead"], "code": p["code"],
-                              "ask": p["ask"], "opts": p["opts"], "ans": p["ans"], "exp": p["exp"], "codeOpts": p["codeOpts"]})
+                              "ask": p["ask"], "opts": p["opts"], "ans": p["ans"], "exp": exp_of(p["id"]), "codeOpts": p["codeOpts"]})
     return out
 
 
@@ -361,7 +392,7 @@ def build_subject(bank_a, bank_b):
     return {"id": "fe", "name": "基本情報技術者", "intro": intro, "chapters": chapters}
 
 
-# ===== IPAの過去問（past_build.py が作る past.json ＋ 解説 past_exp.txt） =====
+# ===== IPAの過去問（past_build.py が作る past.json ＋ 解説 exp/past_*.txt） =====
 PAST_SETS = {   # セットid -> (表示名, 本番形式の模試にするか)
     "r05a": ("令和5年度 公開問題 科目A", False), "r06a": ("令和6年度 公開問題 科目A", False),
     "r07a": ("令和7年度 公開問題 科目A", False), "r08a": ("令和8年度 公開問題 科目A", False),
@@ -374,16 +405,7 @@ PAST_SETS = {   # セットid -> (表示名, 本番形式の模試にするか)
 
 def build_past():
     items = json.loads((HERE / "past.json").read_text(encoding="utf-8"))
-    exp, cur = {}, None
-    for line in (HERE / "past_exp.txt").read_text(encoding="utf-8").split("\n"):
-        if line.startswith("#") and not line.startswith("## "):
-            continue
-        m = re.match(r"^## (\S+) @(\d+)$", line)
-        if m:
-            cur = m.group(1)
-            exp[cur] = {"ch": int(m.group(2)), "text": ""}
-        elif cur and line.strip():
-            exp[cur]["text"] += line.strip()
+    exp = {k: v for k, v in EXP.items() if v["ch"] is not None}   # 過去問の解説は「## id @章」で書く
     ids = {x["id"] for x in items}
     assert set(exp) == ids, f"解説がない過去問 {sorted(ids - set(exp))} / 過去問にない解説 {sorted(set(exp) - ids)}"
     out = []

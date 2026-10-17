@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """科目Bの問題（擬似言語のアルゴリズム24問・情報セキュリティ8問）。build_data.py が読む。
 アルゴリズムの問題には check を付ける。check はPythonで同じ処理を動かし、正解の選択肢の番号（0始まり）を返す。
-build_data.py は check の結果が ans と一致し、正解がちょうど1つであることを確かめる。"""
+build_data.py は check の結果が ans と一致し、正解がちょうど1つであることを確かめる。
+各問の exp は短いメモで、画面に出す解説は data_src/exp/b_basic.txt に書く。"""
 
 ALGO = []
 SEC = []

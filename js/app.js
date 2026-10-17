@@ -490,7 +490,7 @@ function submitAnswer(choice) {
   const last = quiz.i === quiz.ids.length - 1;
   $('q-result').innerHTML = `<div class="result ${ok ? 'ok' : 'ng'}">
       <div class="result-head">${ok ? '正解' : '不正解'}　答えは ${KANA[q.ans]}</div>
-      <p>${esc(q.exp)}</p>
+      ${expHtml(q.exp)}
       ${ok ? `<button class="guess-btn" id="btn-guess">理由を説明できない（勘で当たった）→ ×にする</button>` : ''}
     </div>
     <div class="q-actions">
@@ -498,6 +498,11 @@ function submitAnswer(choice) {
       <button class="btn primary" id="btn-next-q">${last ? '結果を見る' : '次の問題'}</button>
     </div>`;
   $('q-result').scrollIntoView({ block: 'nearest' });
+}
+
+// 解説: 改行をそのまま表示し、【ポイント】などの見出しを太字にする
+function expHtml(text) {
+  return `<div class="exp">${esc(text).replace(/【([^】]+)】/g, '<b class="exp-h">【$1】</b>')}</div>`;
 }
 
 function shortQ(q) {
@@ -642,7 +647,7 @@ function gradeExam() {
     const box = root.querySelector(`.exam-q[data-i="${i}"]`);
     markChoices(box, q, p);
     box.querySelector('.exam-q-ans').innerHTML = `<div class="result ${right ? 'ok' : 'ng'}"><div class="result-head">${right ? '正解' : p === undefined ? '未解答' : '不正解'}　答えは ${KANA[q.ans]}</div>
-      <p>${esc(q.exp)}</p></div>`;
+      ${expHtml(q.exp)}</div>`;
     root.querySelector(`.exam-num[data-exam-q="${i}"]`).classList.add(right ? 'ok' : 'ng');
   });
   const n = exam.ids.length;
