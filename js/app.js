@@ -1,6 +1,6 @@
-// 基本情報技術者 1週間合格プラン: 今日やること・テキスト・問題(科目A/科目B)・本番形式の模擬試験・計画・記録
+// 基本情報技術者 1カ月合格プラン: 今日やること・テキスト・問題(科目A/科目B)・本番形式の模擬試験・計画・記録
 const D = FE_DATA;
-const PLAN = D.plan;          // 1日目〜7日目
+const PLAN = D.plan;          // 1日目〜30日目
 const SUBJ = D.subjects[0];
 const CHAPTERS = {};          // 章id -> 章
 const QUESTIONS = {};         // 問題id -> 問題(+章id)
@@ -39,7 +39,7 @@ function fmtDay(s, withYear) {
 
 // n日目の日付(1日目を決めていなければ null)
 function dayDate(n) { return state.start ? addDays(state.start, n - 1) : null; }
-// 今日が何日目か(1日目より前は0以下、7日目より後は8以上。未設定は null)
+// 今日が何日目か(1日目より前は0以下、最終日より後は LAST+1 以上。未設定は null)
 function todayN() { return state.start ? daysBetween(state.start, todayStr()) + 1 : null; }
 const LAST = PLAN.length;
 const CBT_LAST = '2026-12-27'; // CBT方式の休止前の最終受験日の見込み(IPA発表: 2026年12月28日以降は休止予定)
@@ -143,6 +143,8 @@ function gateResult(item) {
   if (v === undefined || v === '') return { pass: null, text: '未入力' };
   return { pass: Number(v) >= item.target, text: `${v}点` };
 }
+// 過去問セットを関門に使う日(なければ undefined)
+const gateDayOf = (set) => (PLAN.find((p) => (p.gate || []).some((it) => it.set === set)) || {}).n;
 const unit = (it) => (it.type === 'rate' ? '%' : '点');
 
 // 過ぎた関門の日で、届いていない(または未入力の)もの
@@ -159,7 +161,7 @@ function renderToday() {
   let html = `<div class="hero"><div class="hero-date">${fmtDay(t, true)}</div>`;
   if (k) {
     const left = daysBetween(t, dayDate(LAST));
-    html += `<div class="hero-count">${left > 0 ? `受験日まで <b>${left}</b> 日` : left === 0 ? '<b>今日</b> が受験日' : '7日間の計画は終わりました'}</div>`;
+    html += `<div class="hero-count">${left > 0 ? `受験日まで <b>${left}</b> 日` : left === 0 ? '<b>今日</b> が受験日' : '計画は終わりました'}</div>`;
   }
   html += `</div>`;
 
@@ -167,7 +169,7 @@ function renderToday() {
     html += `<div class="card main">
       <div class="card-label">はじめに</div>
       <h2 class="theme">1日目をいつにしますか？</h2>
-      <p class="muted">1日8時間 × 7日間の計画です。7日目にCBT試験（科目A 90分・科目B 100分）を受けます。1日目に試験の予約をするので、7日目に受けられる日を選んでください。CBT試験は2026年12月28日以降に休止の予定です。</p>
+      <p class="muted">1日3時間 × ${LAST}日間の計画です。${LAST}日目にCBT試験（科目A 90分・科目B 100分）を受けます。1日目に試験の予約をするので、${LAST}日目に受けられる日を選んでください。CBT試験は2026年12月28日以降に休止の予定です。</p>
       <div class="btn-row">
         <button class="btn primary" data-set-start="${t}">今日から</button>
         <button class="btn ghost" data-set-start="${addDays(t, 1)}">明日から</button>
@@ -180,7 +182,7 @@ function renderToday() {
 
   if (dayDate(LAST) > CBT_LAST) {
     html += `<div class="card alert"><div class="card-label">受験日がCBTの休止期間に入っています</div>
-      <p class="muted">7日目（${fmtDay(dayDate(LAST))}）は、IPAが発表しているCBT試験の休止（2026年12月28日以降）に入る見込みです。「記録」タブで1日目を早めてください。</p></div>`;
+      <p class="muted">${LAST}日目（${fmtDay(dayDate(LAST))}）は、IPAが発表しているCBT試験の休止（2026年12月28日以降）に入る見込みです。「記録」タブで1日目を早めてください。</p></div>`;
   }
 
   const failed = failedGateNow();
@@ -200,7 +202,7 @@ function renderToday() {
   else if (k <= LAST) day = PLAN[k - 1];
   if (day) html += dayCard(day, label);
   else {
-    html += `<div class="card main"><div class="card-label">7日間の計画は終わりました</div>
+    html += `<div class="card main"><div class="card-label">${LAST}日間の計画は終わりました</div>
       <p class="muted">本番の点数がわかったら入れておきましょう。まだ受けていない場合は、科目Aドリル・間違えた問題・模擬試験を続けてください。</p>
       ${gateBox(PLAN[LAST - 1])}</div>`;
   }
@@ -235,9 +237,9 @@ function renderToday() {
 }
 
 function bRange(ids) {
-  const algo = ids.filter((id) => id.startsWith('b'));
-  const sec = ids.filter((id) => id.startsWith('s'));
-  return [algo.length ? `${algo[0]}〜${algo[algo.length - 1]}` : '', sec.length ? `${sec[0]}〜${sec[sec.length - 1]}` : ''].filter(Boolean).join('・');
+  // 先頭の文字(b・s・x・y)ごとに「最初〜最後」にまとめる
+  return ['b', 's', 'x', 'y'].map((c) => ids.filter((id) => id.startsWith(c)))
+    .filter((g) => g.length).map((g) => (g.length > 1 ? `${g[0]}〜${g[g.length - 1]}` : g[0])).join('・');
 }
 
 function dayCard(day, label) {
@@ -378,7 +380,7 @@ function renderQuizMenu() {
     Object.entries(B_KIND_LABEL).map(([k, label]) => {
       const ids = B_IDS.filter((id) => QUESTIONS[id].kind === k);
       return `<li class="list-row" data-quiz-kind="${k}"><span class="row-no">${k.startsWith('algo') ? '🧩' : '🔒'}</span><span class="row-main"><span class="row-title">${label}</span>
-        <span class="row-sub">全${ids.length}問・正答率 ${rateOf(ids)}%${k.endsWith('0') ? '・1日目の練習用（模試には出ない）' : '・模試に出る'}</span></span></li>`;
+        <span class="row-sub">全${ids.length}問・正答率 ${rateOf(ids)}%${k.endsWith('0') ? '・基礎の練習用（模試には出ない）' : '・模試に出る'}</span></span></li>`;
     }).join('') + `</ul>`;
 
   html += `<h2 class="section-title">過去問（IPA）<span class="section-sub">原文の画像・出典と解説つき</span></h2><ul class="list">` + D.pastSets.map((ps) => {
@@ -391,7 +393,7 @@ function renderQuizMenu() {
     if (ps.mock) {
       row += `<li class="list-row" data-open-exam="past:${ps.id}"><span class="row-no">📝</span>
         <span class="row-main"><span class="row-title">過去問模試 ${PART_LABEL[ps.part]}（本番と同じ ${D.mock[ps.part].min}分）</span>
-          <span class="row-sub">${esc(ps.title)}を時間を計って解く・6日目の関門</span></span>${examChip(ps.part, ps.id)}</li>`;
+          <span class="row-sub">${esc(ps.title)}を時間を計って解く${gateDayOf(ps.id) ? `・${gateDayOf(ps.id)}日目の関門` : ''}</span></span>${examChip(ps.part, ps.id)}</li>`;
     }
     return row;
   }).join('') + `</ul>`;
@@ -742,7 +744,7 @@ function renderRecord() {
     return `<li class="list-row static"><span class="row-main"><span class="row-title">${r.set ? '過去問模試 ' + PART_LABEL[r.part] : '模擬試験 ' + PART_LABEL[r.part]}・${fmtDay(ymd(d))} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}</span>
       <span class="row-sub">${r.ok} / ${r.n} 問正解・${mmss(r.sec * 1000)}</span></span>
       <span class="score-chip ${r.score >= 600 ? 'good' : 'bad'}">${r.score}点</span></li>`;
-  }).join('') + `</ul>` : `<div class="card soft"><p class="muted">「問題」タブの「本番形式の模擬試験」を解くと、ここに並びます。6日目の関門にも自動で記録されます。</p></div>`;
+  }).join('') + `</ul>` : `<div class="card soft"><p class="muted">「問題」タブの「本番形式の模擬試験」を解くと、ここに並びます。過去問模試の点数は、関門にも自動で記録されます。</p></div>`;
 
   html += `<p class="foot">バージョン ${APP_VERSION}${state.start ? `・受験日 ${fmtDay(dayDate(LAST), true)}（予定）` : ''}</p>`;
   $('record-body').innerHTML = html;
@@ -762,7 +764,7 @@ function renderSettings() {
     <h2 class="section-title">1日目の日付</h2>
     <div class="card soft">
       <label class="score-row" for="start-change">1日目<input id="start-change" class="date-input" type="date" value="${esc(state.start || '')}" data-start-input="1"></label>
-      <p class="muted">${state.start ? `受験日（7日目）は${fmtDay(dayDate(LAST), true)}です。` : ''}受験日を変えたときは、ここで1日目をずらしてください。完了の記録は「何日目」で残ります。CBT試験は2026年12月28日以降に休止の予定です。</p>
+      <p class="muted">${state.start ? `受験日（${LAST}日目）は${fmtDay(dayDate(LAST), true)}です。` : ''}受験日を変えたときは、ここで1日目をずらしてください。完了の記録は「何日目」で残ります。CBT試験は2026年12月28日以降に休止の予定です。</p>
     </div>
 
     <h2 class="section-title">バックアップ</h2>
