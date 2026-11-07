@@ -105,10 +105,18 @@ const DRILL_SIZE = 20;
 const CH_FIRST_N = {};
 PLAN.forEach((p) => p.ch.forEach((id) => { if (!CH_FIRST_N[id]) CH_FIRST_N[id] = p.n; }));
 
+// ランダムに出す問題は、学習済みの章(既読にした章・1問でも解いた章・今取り組む日の章)からだけ選ぶ
+function studiedChapters() {
+  const set = new Set(Object.keys(state.read).filter((id) => CHAPTERS[id]));
+  Object.keys(state.quiz).forEach((qid) => { if (QUESTIONS[qid] && QUESTIONS[qid].ch) set.add(QUESTIONS[qid].ch); });
+  const day = PLAN.find((p) => p.n === Math.max(1, Math.min(LAST, todayN() || 1)));
+  if (day) day.ch.forEach((id) => set.add(id));
+  return set;
+}
+const inStudied = (ids) => { const chs = studiedChapters(); return ids.filter((id) => chs.has(QUESTIONS[id].ch)); };
+
 function reachedA() {
-  const k = Math.max(1, Math.min(LAST, todayN() || 1));
-  const chs = Object.keys(CHAPTERS).filter((id) => CH_FIRST_N[id] && CH_FIRST_N[id] <= k);
-  return A_IDS.filter((id) => chs.includes(QUESTIONS[id].ch));
+  return inStudied(A_IDS);
 }
 
 // 間違えた問題 → まだ解いていない問題 → 最後に解いたのが古い問題、の順
@@ -356,12 +364,12 @@ function openChapter(id) {
 function renderQuizMenu() {
   const wrong = wrongIds();
   const all = Object.keys(QUESTIONS);
-  const unanswered = all.filter((id) => !state.quiz[id]).length;
+  const unanswered = inStudied(all).filter((id) => !state.quiz[id]).length;
   let html = `<div class="quick">
     <button class="quick-btn" data-quiz-mode="drill"><b>科目Aドリル</b><span>読んだ章から${DRILL_SIZE}問</span></button>
-    <button class="quick-btn" data-quiz-mode="bmix"><b>科目Bトレース</b><span>本試験レベルのアルゴリズムを5問（間違えた問題を優先）</span></button>
+    <button class="quick-btn" data-quiz-mode="bmix" ${inStudied(B_IDS.filter((id) => QUESTIONS[id].kind === 'algo')).length ? '' : 'disabled'}><b>科目Bトレース</b><span>学習済みの章のアルゴリズムを5問（間違えた問題を優先）</span></button>
     <button class="quick-btn" data-quiz-mode="wrong" ${wrong.length ? '' : 'disabled'}><b>間違えた問題</b><span>${wrong.length}問（3回続けて正解で外れる）</span></button>
-    <button class="quick-btn" data-quiz-mode="new" ${unanswered ? '' : 'disabled'}><b>まだ解いていない問題</b><span>${unanswered}問</span></button>
+    <button class="quick-btn" data-quiz-mode="new" ${unanswered ? '' : 'disabled'}><b>まだ解いていない問題</b><span>学習済みの章から${unanswered}問</span></button>
   </div>
   <p class="muted">科目Aの正答率 ${rateOf(A_IDS)}%（全${A_IDS.length}問）・科目Bの正答率 ${rateOf(B_IDS)}%（全${B_IDS.length}問）。直近で正解している割合で、まだ解いていない問題は×として数えます。</p>`;
 
@@ -429,9 +437,9 @@ function startQuiz(ids, title, mode) {
 function startQuizMode(mode) {
   const all = Object.keys(QUESTIONS);
   if (mode === 'drill') startQuiz(prioritized(reachedA(), DRILL_SIZE), '科目Aドリル', 'drill');
-  else if (mode === 'bmix') startQuiz(prioritized(B_IDS.filter((id) => QUESTIONS[id].kind === 'algo'), 5), '科目Bトレース');
+  else if (mode === 'bmix') startQuiz(prioritized(inStudied(B_IDS.filter((id) => QUESTIONS[id].kind === 'algo')), 5), '科目Bトレース');
   else if (mode === 'wrong') startQuiz(shuffle(wrongIds()), '間違えた問題');
-  else if (mode === 'new') startQuiz(all.filter((id) => !state.quiz[id]).slice(0, 20), 'まだ解いていない問題');
+  else if (mode === 'new') startQuiz(inStudied(all).filter((id) => !state.quiz[id]).slice(0, 20), 'まだ解いていない問題');
 }
 
 // 問題文(科目Bはリード文・プログラム・設問)
